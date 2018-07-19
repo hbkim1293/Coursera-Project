@@ -1,0 +1,110 @@
+---
+title: "Predicting dumbell stance"
+author: "Huibeom Kim"
+date: "2018.7.19"
+output: html_document
+---
+##Synopsis
+In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##Download data
+####data
+The training data for this project are available here:  
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv  
+The test data are available here:  
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv  
+
+```{r, eval=FALSE}
+#Before download files, set your working directory.
+#Download Train data
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+              destfile = "pml-training.csv")
+#Download test data
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+              destfile = "pml-testing.csv")
+```
+
+##Preprocessing
+Load train, test data from your working directory.
+```{r, cache=TRUE}
+#Load pml-training.csv file
+Train <- read.csv("pml-training.csv")
+#Load pml-testing.csv file
+Test <- read.csv("pml-testing.csv")
+```
+
+```{r}
+dim(Train) #check row number and column number
+```
+```{r}
+head(Train[,1:35],4) #limit column number
+```
+
+It seems that some columns have many NA value and blanks. So, I removed columns if they have more than 10000 blanks or 10000 NAs.
+```{r}
+index <- vector() #means column number which has more than 10000NAs or blanks.
+for(i in 1:ncol(Train)){
+  if(sum(is.na(Train[,i])) > 10000 | sum(Train[,i] == "") > 10000){
+    index <- c(index,i)
+  }
+}
+ProcessedTrain <- Train[,-index] #remove the columns
+#And then, I just need measurements from accelerometers, adjust data for predict model.
+ProcessedTrain <- ProcessedTrain[,8:60]
+head(ProcessedTrain[,c(1:10,ncol(ProcessedTrain))])
+```
+
+And last, before make models, separate data to train set and test set.
+```{r}
+library(caret)
+inTrain <- createDataPartition(y = ProcessedTrain$classe, p = 0.75)[[1]]
+training <- ProcessedTrain[inTrain,]
+testing <- ProcessedTrain[-inTrain,]
+```
+
+##Modeling
+In this project, I used two predict models. First, tree model using rpart, and Second, random forest. We can compare two models and will choose model which has bigger accuracy. Let's make tree model.  
+
+####Use Tree model
+In order to limit the effects of overfitting, and improve the efficicency of the models, we will use the cross-validation technique. We will use 5 folds.
+```{r}
+library(rattle) #To implement fancyRpartPlot
+trCon <- trainControl(method = "cv", number = 5) #fold number is 5
+modFit <- train(classe ~., data = training, method = "rpart", trControl = trCon)
+fancyRpartPlot(modFit$finalModel, main = "Using Tree model")
+```
+
+This model doesn't classify the data to class D. It seems to be a problem. Check tree's accuracy and how it classified.
+```{r}
+fitted <- predict(modFit, testing)
+confusionMatrix(fitted,testing$classe)$table
+confusionMatrix(fitted,testing$classe)$overall
+```
+
+It shows very low accuracy like coin flips. How about using Random forest?
+####Use Random forest model
+```{r, cache=TRUE}
+modFit.rf <- train(classe ~., data = training, method = "rf", trControl = trCon, verbose = FALSE)
+plot(modFit.rf, main = "Accuracy by selected Predictors")
+```
+```{r}
+#predict using test set
+fitted.rf <- predict(modFit.rf, testing)
+#check contingency table and accuracy
+confusionMatrix(fitted.rf, testing$classe)
+```
+
+Random Forest model shows very high accuracy 0.9931. So I choosed this model, and predict classe of our test set's participants.
+
+##Prediction
+####Preprocessing Test data
+```{r}
+ProcessedTest <- Test[,-index]
+ProcessedTest <- ProcessedTest[,8:60]
+```
+
+####Predict
+```{r}
+Result <- predict(modFit.rf, ProcessedTest)
+Result
+```
